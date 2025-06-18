@@ -367,155 +367,100 @@ def generate_comorbidity_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFr
 
 
 
-
 def gen_lipid_risk_surrogates(df: pd.DataFrame) -> pd.DataFrame:
     """
     Generates surrogate biomarkers for Alzheimer's-associated lipid risk using
     UK Biobank data from NMR metabolomics and clinical chemistry.
 
-    This function calculates key ratios and a composite score related to
-    atherogenic dyslipidemia, a condition linked to Alzheimer's disease risk.
-    It also calculates the number of APOE4 alleles, a major genetic risk factor.
-
-    The function operates on a pandas DataFrame containing UK Biobank data
-    and adds the following new columns:
-    - 'lipid_apoe4_allele_count': Number of APOE e4 alleles (0, 1, or 2).
-    - 'lipid_risk_apob_apoa1_ratio': Ratio of Apolipoprotein B to Apolipoprotein A1.
-    - 'lipid_risk_tg_hdl_ratio': Ratio of Triglycerides to HDL Cholesterol.
-    - 'lipid_atherogenic_score_z': A composite Z-score of multiple pro-atherogenic
-                                     NMR lipid measures.
-
-    Args:
-        df (pd.DataFrame): A DataFrame containing decoded UK Biobank data.
-                           It must contain the relevant columns (fields) for
-                           lipids, apolipoproteins, and genetics.
-
-    Returns:
-        pd.DataFrame: The input DataFrame with added columns for the lipid
-                      risk surrogates.
+    Returns a DataFrame with only the risk surrogates and the raw variables used to generate them.
     """
-    print("Generating lipid risk surrogates...")
+    import warnings
 
     # --- 1. Define UK Biobank Field Mappings ---
-    # Maps readable names to their corresponding UKB field codes (instance 0, array 0)
     field_map = {
-        # Clinical Chemistry (Biochemistry)
         'hdl_cholesterol': 'f.30760.0.0',
         'triglycerides': 'f.30870.0.0',
         'apolipoprotein_a': 'f.30630.0.0',
         'apolipoprotein_b': 'f.30640.0.0',
-
-        # NMR Metabolomics - Lipoprotein Cholesterol & Lipids
-        'nmr_remnant_c': 'f.23476.0.0',  # Remnant cholesterol (VLDL+IDL)
-        'nmr_ldl_c': 'f.23474.0.0',      # Cholesterol in LDL
-        'nmr_hdl_c': 'f.23472.0.0',      # Cholesterol in HDL
-        'nmr_total_tg_in_vldl': 'f.23485.0.0', # Total triglycerides in VLDL
-        'nmr_sphingomyelins': 'f.23457.0.0', # Sphingomyelins
-        'nmr_dha': 'f.23446.0.0',           # Docosahexaenoic acid (DHA)
-
-        # Genetics
-        'apoe_genotype': 'f.22617.0.0' # APOE e2/e3/e4 status
+        'nmr_remnant_c': 'f.23476.0.0',
+        'nmr_ldl_c': 'f.23474.0.0',
+        'nmr_hdl_c': 'f.23472.0.0',
+        'nmr_total_tg_in_vldl': 'f.23485.0.0',
+        'nmr_sphingomyelins': 'f.23457.0.0',
+        'nmr_dha': 'f.23446.0.0',
+        'apoe_genotype': 'f.22617.0.0'
     }
 
-    # Create a copy to avoid SettingWithCopyWarning
-    df_out = df.copy()
-    
-    # Keep track of generated columns for a final summary
-    generated_cols = []
+    # Prepare output DataFrame with only the relevant columns
+    used_fields = [
+        field_map['hdl_cholesterol'],
+        field_map['triglycerides'],
+        field_map['apolipoprotein_a'],
+        field_map['apolipoprotein_b'],
+        field_map['nmr_remnant_c'],
+        field_map['nmr_ldl_c'],
+        field_map['nmr_total_tg_in_vldl'],
+        field_map['nmr_sphingomyelins'],
+        field_map['nmr_dha'],
+        field_map['apoe_genotype']
+    ]
+    # Only keep columns that exist in df
+    used_fields = [f for f in used_fields if f in df.columns]
+    out = df[used_fields].copy()
 
-    # --- 2. Process APOE Genotype ---
-    apoe_field = field_map['apoe_genotype']
-    if apoe_field in df_out.columns:
-        # UKB coding: e2/e2=1, e2/e3=2, e3/e3=3, e2/e4=4, e3/e4=5, e4/e4=6
+    # --- APOE4 allele count ---
+    if field_map['apoe_genotype'] in out.columns:
         apoe4_map = {
             1: 0, 2: 0, 3: 0, # No e4 allele
             4: 1, 5: 1,       # One e4 allele
             6: 2              # Two e4 alleles
         }
-        df_out['lipid_apoe4_allele_count'] = df_out[apoe_field].map(apoe4_map)
-        generated_cols.append('lipid_apoe4_allele_count')
+        out['lipid_apoe4_allele_count'] = out[field_map['apoe_genotype']].map(apoe4_map)
     else:
-        warnings.warn(f"Column {apoe_field} (APOE genotype) not found. Skipping APOE4 count.")
+        out['lipid_apoe4_allele_count'] = np.nan
 
+    # --- ApoB/ApoA1 ratio ---
+    if field_map['apolipoprotein_b'] in out.columns and field_map['apolipoprotein_a'] in out.columns:
+        out['lipid_risk_apob_apoa1_ratio'] = out[field_map['apolipoprotein_b']] / out[field_map['apolipoprotein_a']]
+    else:
+        out['lipid_risk_apob_apoa1_ratio'] = np.nan
 
-    # --- 3. Calculate Clinical Ratios ---
-    # Ratio of Apolipoprotein B to Apolipoprotein A1
-    try:
-        apo_b = df_out[field_map['apolipoprotein_b']]
-        apo_a = df_out[field_map['apolipoprotein_a']]
-        df_out['lipid_risk_apob_apoa1_ratio'] = apo_b / apo_a
-        generated_cols.append('lipid_risk_apob_apoa1_ratio')
-    except KeyError:
-        warnings.warn("Apolipoprotein columns not found. Skipping ApoB/ApoA1 ratio.")
+    # --- TG/HDL ratio ---
+    if field_map['triglycerides'] in out.columns and field_map['hdl_cholesterol'] in out.columns:
+        out['lipid_risk_tg_hdl_ratio'] = out[field_map['triglycerides']] / out[field_map['hdl_cholesterol']]
+    else:
+        out['lipid_risk_tg_hdl_ratio'] = np.nan
 
-    # Ratio of Triglycerides to HDL Cholesterol
-    try:
-        tg = df_out[field_map['triglycerides']]
-        hdl = df_out[field_map['hdl_cholesterol']]
-        df_out['lipid_risk_tg_hdl_ratio'] = tg / hdl
-        generated_cols.append('lipid_risk_tg_hdl_ratio')
-    except KeyError:
-        warnings.warn("Triglyceride or HDL columns not found. Skipping TG/HDL ratio.")
-
-    # --- 4. Derive Composite Atherogenic Lipid Score ---
-    # This score combines multiple NMR measures associated with atherogenic
-    # dyslipidemia. We standardize them (Z-score) and sum them up.
+    # --- Composite atherogenic lipid score ---
     atherogenic_components = [
-        'nmr_remnant_c',
-        'nmr_ldl_c',
-        'nmr_total_tg_in_vldl',
-        'nmr_sphingomyelins'
+        field_map.get('nmr_remnant_c'),
+        field_map.get('nmr_ldl_c'),
+        field_map.get('nmr_total_tg_in_vldl'),
+        field_map.get('nmr_sphingomyelins')
     ]
-    
-    # DHA is considered protective
-    protective_components = [
-        'nmr_dha'
-    ]
+    protective_components = [field_map.get('nmr_dha')]
 
-    df_out['lipid_atherogenic_score_z'] = 0
-    score_components_found = 0
+    # Only use components present in the DataFrame
+    atherogenic_components = [c for c in atherogenic_components if c in out.columns]
+    protective_components = [c for c in protective_components if c in out.columns]
 
-    # Helper function to safely calculate Z-score
     def safe_zscore(series):
         if series.notna().sum() > 0:
             return (series - series.mean()) / series.std()
         return series
 
-    # Sum Z-scores of atherogenic components
-    for comp in atherogenic_components:
-        field = field_map.get(comp)
-        if field and field in df_out.columns:
-            df_out['lipid_atherogenic_score_z'] += safe_zscore(df_out[field].astype(float))
-            score_components_found += 1
-        else:
-            warnings.warn(f"NMR component {comp} ({field}) not found. Skipping from score.")
-            
-    # Subtract Z-scores of protective components
-    for comp in protective_components:
-        field = field_map.get(comp)
-        if field and field in df_out.columns:
-            df_out['lipid_atherogenic_score_z'] -= safe_zscore(df_out[field].astype(float))
-            score_components_found += 1
-        else:
-            warnings.warn(f"NMR component {comp} ({field}) not found. Skipping from score.")
-
-    if score_components_found > 0:
-        # Normalize the final score by the number of components used
-        df_out['lipid_atherogenic_score_z'] /= score_components_found
-        generated_cols.append('lipid_atherogenic_score_z')
+    score = 0
+    n = 0
+    for c in atherogenic_components:
+        score += safe_zscore(out[c].astype(float))
+        n += 1
+    for c in protective_components:
+        score -= safe_zscore(out[c].astype(float))
+        n += 1
+    if n > 0:
+        out['lipid_atherogenic_score_z'] = score / n
     else:
-        # Drop the column if no components were found
-        df_out = df_out.drop(columns=['lipid_atherogenic_score_z'])
-        warnings.warn("No NMR components found. Could not generate Atherogenic Lipid Score.")
+        out['lipid_atherogenic_score_z'] = np.nan
 
-
-    print("\n--- Lipid Risk Surrogate Generation Complete ---")
-    if generated_cols:
-        print("Added the following columns:")
-        for col in generated_cols:
-            print(f"  - {col}")
-    else:
-        print("No new columns were generated. Please check input data for required fields.")
-    print("----------------------------------------------")
-
-    return df_out
+    # Return only the risk surrogates and the raw variables used
+    return out
