@@ -19,12 +19,12 @@ def generate_ad_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     # Recoding: Higher values indicate lower educational attainment (higher risk)
     education_mapping = {
         1: 6,  # College or University degree
-        2: 5,  # A levels/AS levels or equivalent
-        3: 4,  # O levels/GCSEs or equivalent
+        2: 4,  # A levels/AS levels or equivalent
+        3: 3,  # O levels/GCSEs or equivalent
         4: 3,  # CSEs or equivalent
         5: 2,  # NVQ or HND or HNC or equivalent
-        6: 1,  # Other professional qualifications eg: nursing, teaching
-        -7: np.nan, # None of the above
+        6: 5,  # Other professional qualifications eg: nursing, teaching
+        -7:0,  # None of the above
         -3: np.nan  # Prefer not to answer
     }
     ukb_main_df['risk_less_education'] = ukb_main_df['6138-0.0'].map(education_mapping)
@@ -36,12 +36,16 @@ def generate_ad_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     # Field 20002: Self-reported non-cancer illness
     # Coding 1071 corresponds to hypertension
     ukb_main_df['risk_hypertension'] = ukb_main_df['20002-0.0'].apply(lambda x: 1 if x == 1071 else 0)
-
+    ukb_main_df['systolic']=ukb_main_df['4080-0.0']
+    ukb_main_df['diastolic']=ukb_main_df['4079-0.0']
+    
+    ukb_main_df['risk_hypertension'] = (ukb_main_df['4080-0.0']>130) & (ukb_main_df['4079-0.0']>80)
+    
 
     # --- 3. Hearing Impairment ---
     # Field 2247: Hearing difficulty/problems
     # Recoding: 'Yes' (1) indicates higher risk.
-    ukb_main_df['risk_hearing_impairment'] = ukb_main_df['2247-0.0'].apply(lambda x: 1 if x == 1 else 0)
+    ukb_main_df['risk_hearing_impairment'] = ukb_main_df['2247-0.0'].apply(lambda x: 1 if ((x == 1) | (x == 99))else 0)
 
 
     # --- 4. Smoking ---
@@ -59,23 +63,34 @@ def generate_ad_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     # --- 5. Obesity ---
     # Field 21001: Body mass index (BMI)
     # Higher BMI is a direct risk factor.
-    ukb_main_df['risk_obesity'] = ukb_main_df['21001-0.0']
+    BMI=ukb_main_df['21001-0.0'] 
+    ukb_main_df['risk_obesity'] = BMI
 
+    #height = ukb_main_df['12144-0.0']  # Field 4076: Height
+    waist = ukb_main_df['48-0.0']    # Field 48: Waist circumference
+   # BMI
+    weight = ukb_main_df['21002-0.0'] # Weight
+    height = (weight / BMI ) ** 0.5  # Calculate height from weight and BMI
+    ratio = waist/(height*100) 
+    sex_col = ukb_main_df['31-0.0']  # Field 31
+    ukb_main_df['risk_obesity']= ratio.apply(lambda x: 1 if x > 0.85 else 0) # Waist to height ratio > 0.85 indicates higher risk
+
+    ukb_main_df['risk_obesity']= ratio
 
     # --- 6. Depression ---
-    # Field 20126: Self-reported depression
-    ukb_main_df['risk_depression'] = ukb_main_df['20126-0.0'].apply(lambda x: 1 if x == 1 else 0)
+    # Field 21063: Self-reported depression
+    ukb_main_df['risk_depression'] = ukb_main_df['21063-0.0'].apply(lambda x: 1 if x == 1 else 0)
 
 
     # --- 7. Physical Inactivity ---
-    # Field 22040: International Physical Activity Questionnaire (IPAQ) activity level
-    # Recoding: Inverting the scale as higher IPAQ score is protective.
+    # Field 22032: International Physical Activity Questionnaire (IPAQ) activity level
+    # 
     physical_activity_mapping = {
-        3: 1, # High
-        2: 2, # Moderate
-        1: 3, # Low
+        0: 3, # High
+        1: 2, # Moderate
+        2: 1, # Low
     }
-    ukb_main_df['risk_physical_inactivity'] = ukb_main_df['22040-0.0'].map(physical_activity_mapping)
+    ukb_main_df['risk_physical_inactivity'] = ukb_main_df['22032-0.0'].map(physical_activity_mapping)
 
 
     # --- 8. Diabetes ---
@@ -87,12 +102,14 @@ def generate_ad_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     # Field 1031: Frequency of friend/family visits
     # Recoding: Less frequent visits indicate higher isolation (higher risk).
     social_isolation_mapping = {
-        1: 5, # Daily or almost daily
-        2: 4, # 2-4 times a week
+        1: 1, # Daily or almost daily
+        2: 2, # 2-4 times a week
         3: 3, # Once a week
-        4: 2, # 1-3 times a month
-        5: 1, # Never or almost never
-        -7: np.nan, # None of the above
+        4: 4, # 1-3 times a month
+        5: 5, # Never or almost never
+        6: 6, # Never or almost never
+        7: 7, # Never or almost never
+        -1: np.nan, # None of the above
         -3: np.nan  # Prefer not to answer
     }
     ukb_main_df['risk_social_isolation'] = ukb_main_df['1031-0.0'].map(social_isolation_mapping)
@@ -105,12 +122,27 @@ def generate_ad_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
         1: 6,  # Daily or almost daily
         2: 5,  # Three or four times a week
         3: 4,  # Once or twice a week
-        4: 3,  # One to three times a month
-        5: 2,  # Special occasions only
-        6: 1,  # Never
+        4: 0,  # One to three times a month
+        5: 0,  # Special occasions only
+        6: 0,  # Never
         -3: np.nan  # Prefer not to answer
     }
     ukb_main_df['risk_alcohol'] = ukb_main_df['1558-0.0'].map(alcohol_mapping)
+    # # Fields 20416,29093:Frequency of consuming six or more units of alcohol
+
+    # # Recoding: Higher frequency indicates higher risk.
+    # alcohol_mapping = {
+    #     5: 5,  # Daily or almost daily
+    #     3: 3,  # Three or four times a week
+    #     2: 2,  # Monthly or less
+    #     4: 4,  # One to three times a month
+    #     1:1, # Never
+    #     0: 0,  # Never
+    #     -3: np.nan,  # Never# Prefer not to answer
+    #     -818: np.nan, # Never# Prefer not to answer
+    # } 
+    # ukb_main_df['risk_alcohol'] =  ukb_main_df['20416-0.0'].map(alcohol_mapping)
+   
 
 
     # --- 11. Traumatic Brain Injury ---
@@ -128,7 +160,9 @@ def generate_ad_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     # --- 13. High Cholesterol ---
     # Field 20002: Self-reported non-cancer illness
     # Coding 1473 corresponds to high cholesterol
-    ukb_main_df['risk_high_cholesterol'] = ukb_main_df['20002-0.0'].apply(lambda x: 1 if x == 1473 else 0)
+    ukb_main_df['risk_high_cholesterol'] = (ukb_main_df['30690-0.0']>6.5).astype(int)
+
+
 
 
     # --- 14. Uncorrected Vision Loss ---
@@ -136,13 +170,15 @@ def generate_ad_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     # Assuming those who need glasses but don't wear them are at higher risk.
     # This is a simplification; a more detailed assessment would be needed.
     # Recoding: 1 if 'Yes', 0 if 'No'
-    ukb_main_df['risk_vision_loss'] = ukb_main_df['6142-0.0'].apply(lambda x: 1 if x == 1 else 0)
+    ukb_main_df['risk_vision_loss'] = ukb_main_df['6148-0.0'].apply(lambda x: 1 if (x>0) else 0)
 
 
     # --- Consolidate Risk Factors ---
     risk_factors_df = ukb_main_df[[
         'risk_less_education',
         'risk_hypertension',
+        'systolic',
+        'diastolic',
         'risk_hearing_impairment',
         'risk_smoking',
         'risk_obesity',
@@ -294,7 +330,7 @@ def generate_dietary_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     return surrogates
 
 
-def generate_comorbidity_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
+def gen_comorbidity_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     """
     Generates a minimal set of surrogates for key comorbidities associated with dementia risk,
     derived from UK Biobank data. This function assumes the input DataFrame contains the necessary
@@ -365,102 +401,400 @@ def generate_comorbidity_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFr
 
     return surrogates
 
+import pandas as pd
+import numpy as np
 
-
-def gen_lipid_risk_surrogates(df: pd.DataFrame) -> pd.DataFrame:
+def gen_metabolomics_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Generates surrogate biomarkers for Alzheimer's-associated lipid risk using
-    UK Biobank data from NMR metabolomics and clinical chemistry.
+    Calculates surrogate risk markers using the specific NMR biomarker data
+    fields identified from the provided field summary file.
 
-    Returns a DataFrame with only the risk surrogates and the raw variables used to generate them.
+    Args:
+        ukb_main_df: A pandas DataFrame containing UK Biobank data.
+
+    Returns:
+        A new DataFrame containing the calculated surrogate risk scores from NMR data.
     """
-    import warnings
+    surrogates = pd.DataFrame(index=ukb_main_df.index)
+
+    # --- Direct Risk Factors (Higher value = Higher risk) ---
+    # Using verified Nightingale NMR metabolomics fields from the provided file.
+
+    # Field 23439: Apolipoprotein B
+    surrogates['risk_nmr_apob'] = ukb_main_df.get('23439-0.0')
+
+    # Field 23407: Total Triglycerides
+    surrogates['risk_nmr_triglycerides'] = ukb_main_df.get('23407-0.0')
+    
+    # Field 23405: LDL Cholesterol
+    surrogates['risk_nmr_ldl_cholesterol'] = ukb_main_df.get('23405-0.0')
+
+    # Field 23480: Glycoprotein Acetyls (GlycA)
+    surrogates['risk_nmr_glyca_inflammation'] = ukb_main_df.get('23480-0.0')
+
+    # Field 23470: Glucose
+    surrogates['risk_nmr_glucose'] = ukb_main_df.get('23470-0.0')
+
+    # --- Branched-Chain Amino Acids (BCAAs) ---
+    bcaa_fields = {
+        'leucine': '23466-0.0',    # Field 23466: Leucine
+        'isoleucine': '23465-0.0', # Field 23465: Isoleucine
+        'valine': '23467-0.0'      # Field 23467: Valine
+    }
+    bcaa_scores = []
+    for field in bcaa_fields.values():
+        if field in ukb_main_df.columns:
+            # Normalize each BCAA before summing to give equal weight
+            series = pd.to_numeric(ukb_main_df[field], errors='coerce')
+            normalized_series = (series - series.mean()) / series.std()
+            bcaa_scores.append(normalized_series)
+
+    if bcaa_scores:
+        # Sum the normalized scores to create a composite risk marker
+        surrogates['risk_nmr_bcaa_composite'] = pd.concat(bcaa_scores, axis=1).sum(axis=1, skipna=False)
+
+
+    # --- Protective Factors (Inverted to create risk score) ---
+    # Lower levels are worse, so we multiply by -1 to make a higher value indicate higher risk.
+
+    # Field 23406: HDL Cholesterol
+    if '23406-0.0' in ukb_main_df:
+        surrogates['risk_nmr_inverted_hdl'] = ukb_main_df['23406-0.0'] * -1
+
+    # Field 23440: Apolipoprotein A1
+    if '23440-0.0' in ukb_main_df:
+        surrogates['risk_nmr_inverted_apoa1'] = ukb_main_df['23440-0.0'] * -1
+
+    return surrogates
+
+def gen_immunological_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generates a set of surrogates for key immunological and inflammatory biomarkers associated
+    with dementia risk, derived from UK Biobank blood assay and NMR data. This function assumes
+    the input DataFrame contains the necessary UK Biobank fields.
+
+    The selected immunological risk factors include:
+    1.  C-reactive protein (CRP)
+    2.  White blood cell (leukocyte) count
+    3.  Neutrophil count
+    4.  Monocyte count
+    5.  Neutrophil-to-Lymphocyte Ratio (NLR)
+    6.  Glycoprotein Acetyls (GlycA - inflammation marker from NMR)
+
+    Args:
+        ukb_main_df: A pandas DataFrame containing the raw UK Biobank data, indexed by 'eid'.
+
+    Returns:
+        A pandas DataFrame with one row per participant and columns for each of the immunological
+        risk factor surrogates. For all columns, a higher value indicates higher dementia risk.
+        The DataFrame is indexed by 'eid'.
+    """
+    # Create a new DataFrame to hold the surrogates, using the index from the input
+    surrogates = pd.DataFrame(index=ukb_main_df.index)
+
+    # For all these markers, a higher value is already associated with higher inflammation and risk.
+
+    # --- 1. C-reactive protein (CRP) ---
+    # Field 30710: A primary marker of systemic inflammation.
+    surrogates['risk_crp'] = ukb_main_df.get('30710-0.0')
+
+    # --- 2. White blood cell (leukocyte) count ---
+    # Field 30000: A general marker of immune system activation.
+    surrogates['risk_wbc_count'] = ukb_main_df.get('30000-0.0')
+
+    # --- 3. Neutrophil count ---
+    # Field 30140: A major component of the innate immune system.
+    neutrophil_count = ukb_main_df.get('30140-0.0')
+    surrogates['risk_neutrophil_count'] = neutrophil_count
+
+    # --- 4. Monocyte count ---
+    # Field 30130: Involved in inflammatory responses.
+    surrogates['risk_monocyte_count'] = ukb_main_df.get('30130-0.0')
+    
+    # --- 5. Neutrophil-to-Lymphocyte Ratio (NLR) ---
+    # A composite marker of systemic inflammation. Higher NLR indicates greater inflammation.
+    # Calculated from Neutrophil count (30140) and Lymphocyte count (30120).
+    lymphocyte_count = ukb_main_df.get('30120-0.0')
+    
+    # Calculate NLR, handling potential division by zero or NaN values gracefully.
+    if neutrophil_count is not None and lymphocyte_count is not None:
+        # Replace zeros in denominator with NaN to avoid division errors and subsequent NaNs
+        lymphocytes_no_zero = lymphocyte_count.replace(0, np.nan)
+        surrogates['risk_nlr'] = neutrophil_count / lymphocytes_no_zero
+
+    # --- 6. Glycoprotein acetyls (GlycA) ---
+    # Field 23454: A marker of chronic inflammation from the NMR metabolomics panel.
+    surrogates['risk_glyca_inflammation'] = ukb_main_df.get('23454-0.0')
+    
+    return surrogates
+
+
+import pandas as pd
+import numpy as np
+import warnings
+
+def gen_serology_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generates surrogate biomarkers from the UK Biobank virus serology substudy.
+
+    This function processes antibody measurement data for SARS-CoV-2 and a panel of
+    other common viruses to create high-level summary variables. These surrogates
+    can be used to model the impact of past infections on health outcomes.
+
+    The function operates on a pandas DataFrame containing UK Biobank data
+    and adds the following new columns:
+    - 'serology_covid19_status': Categorical status (Seronegative, Infection-induced,
+      Vaccine-induced) based on Spike and Nucleocapsid antibody results.
+    - 'serology_pathogen_burden_score': A count of positive results from a panel
+      of 8 common viruses, representing total pathogen exposure.
+    - 'serology_herpesvirus_score_z': A continuous, standardized score of the
+      antibody response magnitude to four common herpesviruses (EBV, CMV, HSV-1, VZV).
+
+    Args:
+        df (pd.DataFrame): A DataFrame containing decoded UK Biobank data.
+                           It must contain the relevant columns (fields) from
+                           the serology substudy (Categories 100300, 2120).
+
+    Returns:
+        pd.DataFrame: The input DataFrame with added columns for the
+                      serology risk surrogates.
+    """
+    print("Generating serology risk surrogates...")
 
     # --- 1. Define UK Biobank Field Mappings ---
+    # Maps readable names to their UKB field codes (instance 0, array 0)
+    # These fields are primarily from Category 100300 and Category 2120
     field_map = {
-        'hdl_cholesterol': 'f.30760.0.0',
-        'triglycerides': 'f.30870.0.0',
-        'apolipoprotein_a': 'f.30630.0.0',
-        'apolipoprotein_b': 'f.30640.0.0',
-        'nmr_remnant_c': 'f.23476.0.0',
-        'nmr_ldl_c': 'f.23474.0.0',
-        'nmr_hdl_c': 'f.23472.0.0',
-        'nmr_total_tg_in_vldl': 'f.23485.0.0',
-        'nmr_sphingomyelins': 'f.23457.0.0',
-        'nmr_dha': 'f.23446.0.0',
-        'apoe_genotype': 'f.22617.0.0'
+        # SARS-CoV-2 (COVID-19) Assays
+        'covid_s_antibody': '40118-0.0', # Ab-S (Spike protein, chemiluminescence)
+        'covid_n_antibody': '40117-0.0', # Ab-N (Nucleocapsid protein, chemiluminescence)
+
+        # Common Virus Panel (IgG measurements, chemiluminescence)
+        'ebv': '30214-0.0',      # Epstein-Barr Virus
+        'cmv': '30208-0.0',      # Cytomegalovirus
+        'hsv1': '30220-0.0',     # Herpes Simplex Virus 1
+        'vzv': '30244-0.0',      # Varicella-Zoster Virus (Chickenpox/Shingles)
+        'hpv16': '30256-0.0',    # Human Papillomavirus 16 (high-risk)
+        'hhv6': '30226-0.0',     # Human Herpesvirus 6
+        'jcv': '30232-0.0',      # John Cunningham Virus
+        'bkv': '30202-0.0'       # BK Virus
     }
 
-    # Prepare output DataFrame with only the relevant columns
-    used_fields = [
-        field_map['hdl_cholesterol'],
-        field_map['triglycerides'],
-        field_map['apolipoprotein_a'],
-        field_map['apolipoprotein_b'],
-        field_map['nmr_remnant_c'],
-        field_map['nmr_ldl_c'],
-        field_map['nmr_total_tg_in_vldl'],
-        field_map['nmr_sphingomyelins'],
-        field_map['nmr_dha'],
-        field_map['apoe_genotype']
-    ]
-    # Only keep columns that exist in df
-    used_fields = [f for f in used_fields if f in df.columns]
-    out = df[used_fields].copy()
+    df_out = ukb_main_df.copy()
+    generated_cols = []
 
-    # --- APOE4 allele count ---
-    if field_map['apoe_genotype'] in out.columns:
-        apoe4_map = {
-            1: 0, 2: 0, 3: 0, # No e4 allele
-            4: 1, 5: 1,       # One e4 allele
-            6: 2              # Two e4 alleles
-        }
-        out['lipid_apoe4_allele_count'] = out[field_map['apoe_genotype']].map(apoe4_map)
+    # --- 2. Create COVID-19 Status Surrogate ---
+    s_field = field_map['covid_s_antibody']
+    n_field = field_map['covid_n_antibody']
+
+    if s_field in df_out.columns and n_field in df_out.columns:
+        # Official cutoffs from UKB for the Roche Elecsys assays:
+        # Positive if value >= 0.8 (Spike) or >= 1.0 (Nucleocapsid)
+        s_positive = df_out[s_field] >= 0.8
+        n_positive = df_out[n_field] >= 1.0
+
+        # Logic to determine status:
+        # - Infection: N-positive (as N is not induced by vaccines)
+        # - Vaccine-induced: S-positive BUT N-negative
+        # - Seronegative: Both S and N are negative
+        conditions = [
+            n_positive,
+            (s_positive) & (~n_positive),
+            (~s_positive) & (~n_positive)
+        ]
+        choices = [
+            'Infection-induced',
+            'Vaccine-induced',
+            'Seronegative'
+        ]
+        df_out['serology_covid19_status'] = np.select(conditions, choices, default='Ambiguous')
+        generated_cols.append('serology_covid19_status')
     else:
-        out['lipid_apoe4_allele_count'] = np.nan
+        warnings.warn("COVID-19 antibody columns not found. Skipping COVID-19 status surrogate.")
 
-    # --- ApoB/ApoA1 ratio ---
-    if field_map['apolipoprotein_b'] in out.columns and field_map['apolipoprotein_a'] in out.columns:
-        out['lipid_risk_apob_apoa1_ratio'] = out[field_map['apolipoprotein_b']] / out[field_map['apolipoprotein_a']]
+
+    # --- 3. Create Pathogen Burden Score ---
+    pathogen_panel = ['ebv', 'cmv', 'hsv1', 'vzv', 'hpv16', 'hhv6', 'jcv', 'bkv']
+    burden_cols_found = []
+
+    # Binarize each virus based on a seropositivity cutoff.
+    # NOTE: These cutoffs are illustrative. For research, use official assay documentation.
+    # A common approach is to use a cutoff provided by the manufacturer or literature.
+    # Here we assume a simple cutoff of >= 1.0 arbitrary units for positivity.
+    cutoff = 1.0
+    for virus in pathogen_panel:
+        field = field_map.get(virus)
+        if field and field in df_out.columns:
+            binary_col_name = f'is_pos_{virus}'
+            df_out[binary_col_name] = (df_out[field] >= cutoff).astype(int)
+            burden_cols_found.append(binary_col_name)
+
+    if burden_cols_found:
+        df_out['serology_pathogen_burden_score'] = df_out[burden_cols_found].sum(axis=1)
+        generated_cols.append('serology_pathogen_burden_score')
+        # Clean up intermediate binary columns
+        df_out.drop(columns=burden_cols_found, inplace=True)
     else:
-        out['lipid_risk_apob_apoa1_ratio'] = np.nan
+        warnings.warn("No common virus panel columns found. Skipping pathogen burden score.")
 
-    # --- TG/HDL ratio ---
-    if field_map['triglycerides'] in out.columns and field_map['hdl_cholesterol'] in out.columns:
-        out['lipid_risk_tg_hdl_ratio'] = out[field_map['triglycerides']] / out[field_map['hdl_cholesterol']]
-    else:
-        out['lipid_risk_tg_hdl_ratio'] = np.nan
 
-    # --- Composite atherogenic lipid score ---
-    atherogenic_components = [
-        field_map.get('nmr_remnant_c'),
-        field_map.get('nmr_ldl_c'),
-        field_map.get('nmr_total_tg_in_vldl'),
-        field_map.get('nmr_sphingomyelins')
-    ]
-    protective_components = [field_map.get('nmr_dha')]
-
-    # Only use components present in the DataFrame
-    atherogenic_components = [c for c in atherogenic_components if c in out.columns]
-    protective_components = [c for c in protective_components if c in out.columns]
+    # --- 4. Create Herpesvirus Latency Score ---
+    herpes_panel = ['ebv', 'cmv', 'hsv1', 'vzv']
+    herpes_z_scores = []
 
     def safe_zscore(series):
-        if series.notna().sum() > 0:
+        # Calculates Z-score, handling series with zero standard deviation
+        if series.notna().sum() > 0 and series.std() > 0:
             return (series - series.mean()) / series.std()
-        return series
+        return series # Return original series if it can't be standardized
 
-    score = 0
-    n = 0
-    for c in atherogenic_components:
-        score += safe_zscore(out[c].astype(float))
-        n += 1
-    for c in protective_components:
-        score -= safe_zscore(out[c].astype(float))
-        n += 1
-    if n > 0:
-        out['lipid_atherogenic_score_z'] = score / n
+    for virus in herpes_panel:
+        field = field_map.get(virus)
+        if field and field in df_out.columns:
+            df_out[f'{field}_z'] = safe_zscore(df_out[field].astype(float))
+            herpes_z_scores.append(f'{field}_z')
+
+    if herpes_z_scores:
+        # The score is the sum of the standardized antibody levels
+        df_out['serology_herpesvirus_score_z'] = df_out[herpes_z_scores].sum(axis=1)
+        generated_cols.append('serology_herpesvirus_score_z')
+        # Clean up intermediate z-score columns
+        df_out.drop(columns=herpes_z_scores, inplace=True)
     else:
-        out['lipid_atherogenic_score_z'] = np.nan
+        warnings.warn("No herpesvirus panel columns found. Skipping herpesvirus score.")
 
-    # Return only the risk surrogates and the raw variables used
-    return out
+
+    print("\n--- Serology Risk Surrogate Generation Complete ---")
+    if generated_cols:
+        print("Added the following columns:")
+        for col in generated_cols:
+            print(f"  - {col}")
+    else:
+        print("No new columns were generated. Please check input data for required fields.")
+    print("-------------------------------------------------")
+
+    return df_out
+
+
+
+def gen_systemic_modulator_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generates a set of surrogates for systemic factors that may modulate amyloid-beta and
+    plasma Tau levels, derived from UK Biobank biomarker data. This function focuses on
+    physiological systems (kidney, liver) and general inflammation, excluding direct
+    neuro-biomarkers like amyloid or tau.
+
+    The selected factors include:
+    1.  Cystatin C (kidney function)
+    2.  Creatinine (kidney function)
+    3.  Alanine Aminotransferase (ALT - liver function)
+    4.  Aspartate Aminotransferase (AST - liver function)
+    5.  C-reactive protein (CRP - systemic inflammation)
+    6.  Inverted Albumin (general health/nutritional status)
+
+    Args:
+        ukb_main_df: A pandas DataFrame containing the raw UK Biobank data, indexed by 'eid'.
+
+    Returns:
+        A pandas DataFrame with one row per participant and columns for each of the surrogate
+        factors. For all columns, a higher value indicates a state more associated with
+        impaired systemic function or higher inflammation. The DataFrame is indexed by 'eid'.
+    """
+    # Create a new DataFrame to hold the surrogates, using the index from the input
+    surrogates = pd.DataFrame(index=ukb_main_df.index)
+
+    # --- Kidney Function Markers (Higher = worse function) ---
+    # Field 30720: Cystatin C.
+    surrogates['risk_cystatin_c'] = ukb_main_df.get('30720-0.0')
+    # Field 30700: Creatinine.
+    surrogates['risk_creatinine'] = ukb_main_df.get('30700-0.0')
+
+    # --- Liver Function Markers (Higher = more liver stress) ---
+    # Field 30620: Alanine aminotransferase (ALT).
+    surrogates['risk_alt'] = ukb_main_df.get('30620-0.0')
+    # Field 30650: Aspartate aminotransferase (AST).
+    surrogates['risk_ast'] = ukb_main_df.get('30650-0.0')
+    
+    # --- Systemic Inflammation Marker (Higher = more inflammation) ---
+    # Field 30710: C-reactive protein (CRP).
+    surrogates['risk_crp'] = ukb_main_df.get('30710-0.0')
+
+    # --- General Health Marker (Inverted to create risk score) ---
+    # Field 30600: Albumin. Lower albumin is associated with poorer health outcomes.
+    # We multiply by -1 so that a higher value in our surrogate indicates higher risk.
+    if '30600-0.0' in ukb_main_df:
+        surrogates['risk_inverted_albumin'] = ukb_main_df['30600-0.0'] * -1
+
+    return surrogates
+
+
+
+def gen_biochemistry_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generates a set of surrogates for blood biochemistry markers associated with dementia risk,
+    derived from the UK Biobank dataset.
+
+    The selected biomarkers are established risk factors for dementia or related cardiometabolic
+    conditions. They include markers for dyslipidemia, glucose control, and general metabolic health.
+
+    The selected factors include:
+    1.  Total Cholesterol
+    2.  LDL Cholesterol
+    3.  Apolipoprotein B
+    4.  Triglycerides
+    5.  Glucose
+    6.  Glycated Haemoglobin (HbA1c)
+    7.  Lipoprotein A
+    8.  Inverted HDL Cholesterol (as low HDL is a risk factor)
+    9.  Inverted Apolipoprotein A (as low ApoA is a risk factor)
+
+    Args:
+        ukb_main_df: A pandas DataFrame containing the raw UK Biobank data, indexed by 'eid'.
+
+    Returns:
+        A pandas DataFrame with one row per participant and columns for each of the surrogate
+        factors. For all columns, a higher value indicates a state more associated with
+        dementia risk. The DataFrame is indexed by 'eid'.
+    """
+    # Create a new DataFrame to hold the surrogates, using the index from the input
+    surrogates = pd.DataFrame(index=ukb_main_df.index)
+
+    # --- Direct Risk Factors (Higher value = Higher risk) ---
+    
+    # Field 30690: Total Cholesterol
+    surrogates['risk_total_cholesterol'] = ukb_main_df.get('30690-0.0')
+    
+    # Field 30780: LDL direct
+    surrogates['risk_ldl_direct'] = ukb_main_df.get('30780-0.0')
+    
+    # Field 30640: Apolipoprotein B (a key component of LDL)
+    surrogates['risk_apob'] = ukb_main_df.get('30640-0.0')
+
+    # Field 30870: Triglycerides
+    surrogates['risk_triglycerides'] = ukb_main_df.get('30870-0.0')
+
+    # Field 30740: Glucose
+    surrogates['risk_glucose'] = ukb_main_df.get('30740-0.0')
+    
+    # Field 30750: Glycated haemoglobin (HbA1c) - a marker of long-term glucose levels
+    surrogates['risk_hba1c'] = ukb_main_df.get('30750-0.0')
+
+    # Field 30790: Lipoprotein A - an independent cardiovascular risk factor
+    surrogates['risk_lipoprotein_a'] = ukb_main_df.get('30790-0.0')
+
+    # --- Protective Factors (Inverted to create risk score) ---
+    # For these, lower levels are associated with higher risk. We multiply by -1
+    # so that a higher value in our surrogate indicates higher risk.
+
+    # Field 30760: HDL cholesterol ("good" cholesterol)
+    if '30760-0.0' in ukb_main_df:
+        surrogates['risk_inverted_hdl'] = ukb_main_df.get('30760-0.0') * -1
+
+    # Field 30630: Apolipoprotein A (a key component of HDL)
+    if '30630-0.0' in ukb_main_df:
+        surrogates['risk_inverted_apoa'] = ukb_main_df.get('30630-0.0') * -1
+
+    return surrogates
+
+
+
