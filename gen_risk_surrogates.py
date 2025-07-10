@@ -35,12 +35,20 @@ def generate_ad_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     # --- 2. Hypertension ---
     # Field 20002: Self-reported non-cancer illness
     # Coding 1071 corresponds to hypertension
-    ukb_main_df['risk_hypertension'] = ukb_main_df['20002-0.0'].apply(lambda x: 1 if x == 1071 else 0)
-    ukb_main_df['systolic']=ukb_main_df['4080-0.0']
-    ukb_main_df['diastolic']=ukb_main_df['4079-0.0']
+    #ukb_main_df['risk_hypertension'] = ukb_main_df['20002-0.0'].apply(lambda x: 1 if x == 1071 else 0)
+    #ukb_main_df['systolic']=ukb_main_df['4080-0.0']
+    #ukb_main_df['diastolic']=ukb_main_df['4079-0.0']
     
-    ukb_main_df['risk_hypertension'] = (ukb_main_df['4080-0.0']>130) & (ukb_main_df['4079-0.0']>80)
+    #ukb_main_df['risk_hypertension'] = (ukb_main_df['4080-0.0']>130) & (ukb_main_df['4079-0.0']>80)
     
+    # Use a dictionary to map self-reported vascular/heart problems (Field 6150)
+    # 1: Heart attack, 2: Angina, 3: Stroke, 4: High blood pressure
+    vascular_map = ukb_main_df.filter(regex='^6150-').stack().reset_index()
+    vascular_map.columns = ['eid', 'field', 'condition_code']
+    vascular_map = vascular_map.drop('field', axis=1).drop_duplicates()
+    hypertension_eids = vascular_map[vascular_map['condition_code'] == 4]['eid']
+    ukb_main_df['risk_hypertension'] = ukb_main_df.index.isin(hypertension_eids).astype(int)
+
 
     # --- 3. Hearing Impairment ---
     # Field 2247: Hearing difficulty/problems
@@ -64,18 +72,18 @@ def generate_ad_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     # Field 21001: Body mass index (BMI)
     # Higher BMI is a direct risk factor.
     BMI=ukb_main_df['21001-0.0'] 
-    ukb_main_df['risk_obesity'] = BMI
+    ukb_main_df['risk_obesity'] = BMI > 30
 
-    #height = ukb_main_df['12144-0.0']  # Field 4076: Height
-    waist = ukb_main_df['48-0.0']    # Field 48: Waist circumference
-   # BMI
-    weight = ukb_main_df['21002-0.0'] # Weight
-    height = (weight / BMI ) ** 0.5  # Calculate height from weight and BMI
-    ratio = waist/(height*100) 
-    sex_col = ukb_main_df['31-0.0']  # Field 31
-    ukb_main_df['risk_obesity']= ratio.apply(lambda x: 1 if x > 0.85 else 0) # Waist to height ratio > 0.85 indicates higher risk
+#     #height = ukb_main_df['12144-0.0']  # Field 4076: Height
+#     waist = ukb_main_df['48-0.0']    # Field 48: Waist circumference
+#    # BMI
+#     weight = ukb_main_df['21002-0.0'] # Weight
+#     height = (weight / BMI ) ** 0.5  # Calculate height from weight and BMI
+#     ratio = waist/(height*100) 
+#     sex_col = ukb_main_df['31-0.0']  # Field 31
+#     ukb_main_df['risk_obesity']= ratio.apply(lambda x: 1 if x > 0.85 else 0) # Waist to height ratio > 0.85 indicates higher risk
 
-    ukb_main_df['risk_obesity']= ratio
+#     ukb_main_df['risk_obesity']= ratio
 
     # --- 6. Depression ---
     # Field 21063: Self-reported depression
@@ -177,8 +185,6 @@ def generate_ad_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     risk_factors_df = ukb_main_df[[
         'risk_less_education',
         'risk_hypertension',
-        'systolic',
-        'diastolic',
         'risk_hearing_impairment',
         'risk_smoking',
         'risk_obesity',
@@ -372,6 +378,8 @@ def gen_comorbidity_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     surrogates['risk_ihd'] = surrogates.index.isin(ihd_eids).astype(int)
 
     # --- 3. Hypertension ---
+    
+    
     hypertension_eids = vascular_map[vascular_map['condition_code'] == 4]['eid']
     surrogates['risk_hypertension'] = surrogates.index.isin(hypertension_eids).astype(int)
 
@@ -797,4 +805,384 @@ def gen_biochemistry_risk_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
     return surrogates
 
 
+import pandas as pd
+import numpy as np
+
+def gen_viral_reactivation_markers(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generates a set of markers for brain viral (re)activation, with a focus on HSV-1,
+    derived from UK Biobank data.
+
+    Args:
+        ukb_main_df: A pandas DataFrame containing the raw UK Biobank data.
+
+    Returns:
+        A pandas DataFrame with one row per participant and columns for each of the
+        viral reactivation markers.
+    """
+
+    # --- 1. Direct Viral and Immune Response Markers ---
+    # Field 23050: HSV-1 seropositivity
+    ukb_main_df['hsv1_seropositivity'] = ukb_main_df['23050-0.0'].apply(lambda x: 1 if x == 1 else 0)
+
+    # Field 30000: White blood cell (leukocyte) count
+    ukb_main_df['leukocyte_count'] = ukb_main_df['30000-0.0']
+
+    # Field 30120: Lymphocyte count
+    ukb_main_df['lymphocyte_count'] = ukb_main_df['30120-0.0']
+
+    # Field 30130: Monocyte count
+    ukb_main_df['monocyte_count'] = ukb_main_df['30130-0.0']
+
+    # Field 30140: Neutrophill count
+    ukb_main_df['neutrophil_count'] = ukb_main_df['30140-0.0']
+
+    # Field 30710: C-reactive protein
+    ukb_main_df['crp'] = ukb_main_df['30710-0.0']
+
+
+    # --- 2. Olink Proteomics Markers ---
+    # Note: The following are placeholders for the actual Olink data fields.
+    # Replace the field IDs with the correct ones when available.
+    ukb_main_df['nfl'] = ukb_main_df.get('31043-0.0', pd.Series(np.nan, index=ukb_main_df.index))
+    ukb_main_df['gfap'] = ukb_main_df.get('31042-0.0', pd.Series(np.nan, index=ukb_main_df.index))
+    ukb_main_df['ab40'] = ukb_main_df.get('31040-0.0', pd.Series(np.nan, index=ukb_main_df.index))
+    ukb_main_df['ab42'] = ukb_main_df.get('31041-0.0', pd.Series(np.nan, index=ukb_main_df.index))
+    ukb_main_df['ptau181'] = ukb_main_df.get('31044-0.0', pd.Series(np.nan, index=ukb_main_df.index))
+    ukb_main_df['il6'] = ukb_main_df.get('olink_il6-0.0', pd.Series(np.nan, index=ukb_main_df.index))
+    ukb_main_df['tnf'] = ukb_main_df.get('olink_tnf-0.0', pd.Series(np.nan, index=ukb_main_df.index))
+    ukb_main_df['ifny'] = ukb_main_df.get('olink_ifny-0.0', pd.Series(np.nan, index=ukb_main_df.index))
+    ukb_main_df['cxcl10'] = ukb_main_df.get('olink_cxcl10-0.0', pd.Series(np.nan, index=ukb_main_df.index))
+
+
+    # --- 3. Clinical and Phenotypic Data ---
+    # Field 41202, 41204: ICD10 Codes for neurological conditions
+    neuro_codes = ['G00', 'G03', 'G04', 'F00', 'F01', 'F02', 'F03', 'G30']
+    ukb_main_df['neuro_diagnosis'] = ukb_main_df['41202-0.0'].apply(lambda x: 1 if x in neuro_codes else 0)
+
+    # Field 20002: Self-reported non-cancer illness
+    ukb_main_df['self_reported_neuro'] = ukb_main_df['20002-0.0'].apply(lambda x: 1 if x in [1263, 1262, 1261, 1260, 1483] else 0)
+
+    # Field 20544: Mental health problems diagnosed by professional
+    #ukb_main_df['prof_diag_mental_health'] = ukb_main_df['20544-0.0'].apply(lambda x: 1 if x is not None and x != '' else 0)
+
+    # Field 6145:	Illness, injury, bereavement, stress in last 2 years
+    ukb_main_df['Illness_stress'] = ukb_main_df['6145-0.0'].apply(lambda x: 1 if x>0 else 0)
+
+    # --- 4. Cognitive Function ---
+    # Field 20016: Fluid intelligence score
+    ukb_main_df['fluid_intelligence'] = ukb_main_df['20016-0.0']
+
+    # Field 20023: Mean time to correctly identify matches
+    ukb_main_df['processing_speed'] = ukb_main_df['20023-0.0']
+
+    # Field 20018: Prospective memory result
+    ukb_main_df['prospective_memory'] = ukb_main_df['20018-0.0']
+
+
+    # --- 5. Brain Imaging ---
+    # These fields indicate the presence of imaging data. The actual analysis would require processing the image files.
+    #ukb_main_df['t1_image_available'] = ukb_main_df['20216-0.0'].apply(lambda x: 1 if pd.notna(x) else 0)
+    #ukb_main_df['t2_flair_image_available'] = ukb_main_df['20220-0.0'].apply(lambda x: 1 if pd.notna(x) else 0)
+    #ukb_main_df['wmh_volume'] = ukb_main_df['25781-0.0']
+    #ukb_main_df['dti_available'] = ukb_main_df['20250-0.0'].apply(lambda x: 1 if pd.notna(x) else 0)
+    #ukb_main_df['asl_available'] = ukb_main_df['26300-0.0'].apply(lambda x: 1 if pd.notna(x) else 0)
+
+
+    # --- Consolidate Markers ---
+    viral_markers_df = ukb_main_df[[
+        'hsv1_seropositivity', 'leukocyte_count', 'lymphocyte_count', 'monocyte_count',
+        'neutrophil_count', 'crp', 'nfl', 'gfap', 'ab40', 'ab42', 'ptau181', 'il6', 'tnf', 'ifny', 'cxcl10',
+        'neuro_diagnosis', 'self_reported_neuro','Illness_stress', 'fluid_intelligence',
+        'processing_speed', 'prospective_memory'
+    ]].copy() #   'prof_diag_mental_health',,'t1_image_available', 't2_flair_image_available', 'wmh_volume', 'dti_available', 'asl_available'
+
+    return viral_markers_df
+
+
+
+import pandas as pd
+import numpy as np
+
+def gen_hsv1_susceptibility_markers(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generates a set of markers for susceptibility to HSV-1 related neurodegeneration,
+    derived from UK Biobank data. These markers represent processes like immunosenescence,
+    chronic inflammation, and metabolic dysfunction.
+
+    Note: APOE-e4 status is a critical covariate and should be included in any
+    downstream analysis but is not generated in this function.
+
+    Args:
+        ukb_main_df: A pandas DataFrame containing the raw UK Biobank data.
+
+    Returns:
+        A pandas DataFrame with one row per participant and columns for each of the
+        susceptibility markers.
+    """
+
+    markers_df = pd.DataFrame(index=ukb_main_df.index)
+
+    # --- 1. Immunosenescence Markers ---
+    # Field 30120: Lymphocyte count
+    markers_df['lymphocyte_count'] = ukb_main_df.get('30120-0.0')
+
+    # Field 30140: Neutrophil count
+    markers_df['neutrophil_count'] = ukb_main_df.get('30140-0.0')
+
+    # Neutrophil to Lymphocyte Ratio (NLR)
+    # A higher ratio indicates greater inflammation and is associated with immunosenescence.
+    # Add a small epsilon to avoid division by zero
+    markers_df['neutrophil_lymphocyte_ratio'] = ukb_main_df.get('30140-0.0') / (ukb_main_df.get('30120-0.0', 0) + 1e-9)
+
+
+    # --- 2. Chronic Systemic Inflammation Markers ---
+    # Field 30710: C-reactive protein
+    markers_df['crp'] = ukb_main_df.get('30710-0.0')
+
+    # Field 23480: Glycoprotein Acetyls (from NMR metabolomics)
+    markers_df['glyca'] = ukb_main_df.get('23480-0.0')
+
+    # Olink Proteomics (placeholders for relevant inflammatory markers)
+    markers_df['olink_il6'] = ukb_main_df.get('olink_il6-0.0') # Example field ID
+    markers_df['olink_tnf'] = ukb_main_df.get('olink_tnf-0.0') # Example field ID
+
+
+    # --- 3. Blood-Brain Barrier (BBB) Dysfunction Proxies ---
+    # Field 30600: Albumin (lower serum levels can be associated with BBB issues)
+    markers_df['albumin'] = ukb_main_df.get('30600-0.0')
+
+    # Hypertension status from blood pressure readings
+    systolic_bp = ukb_main_df.get('4080-0.0')
+    diastolic_bp = ukb_main_df.get('4079-0.0')
+    markers_df['hypertension_bp_criteria'] = ((systolic_bp >= 140) | (diastolic_bp >= 90)).astype(int)
+
+    # History of stroke (ICD-10 codes I60-I69)
+    stroke_codes = [f'I6{i}' for i in range(10)]
+    markers_df['stroke_history_icd10'] = ukb_main_df.get('41202-0.0', pd.Series(np.nan, index=ukb_main_df.index)).isin(stroke_codes).astype(int)
+
+
+    # --- 4. Metabolic Dysfunction Markers ---
+    # Field 2443: Doctor diagnosed diabetes
+    markers_df['diabetes_diagnosis'] = ukb_main_df.get('2443-0.0', pd.Series(0, index=ukb_main_df.index)).apply(lambda x: 1 if x == 1 else 0)
+
+    # Field 30750: Glycated haemoglobin (HbA1c)
+    markers_df['hba1c'] = ukb_main_df.get('30750-0.0')
+
+    # Field 21001: Body mass index (BMI)
+    markers_df['bmi'] = ukb_main_df.get('21001-0.0')
+
+    # Field 30870: Triglycerides
+    markers_df['triglycerides'] = ukb_main_df.get('30870-0.0')
+
+    # Field 30760: HDL cholesterol
+    markers_df['hdl_cholesterol'] = ukb_main_df.get('30760-0.0')
+
+
+    # --- 5. Genetic Factors ---
+    # Field 22182: HLA imputation values availability
+    # The presence of this data allows for specialized analysis of immune-related genetic risk.
+    markers_df['hla_data_available'] = ukb_main_df.get('22182-0.0').notna().astype(int)
+
+
+    return markers_df
+
+if __name__ == '__main__':
+    # This is a placeholder for loading the actual UK Biobank data.
+    # Researchers with access should replace this with their data loading mechanism.
+    # For demonstration, we create a dummy dataframe.
+    num_records = 100
+    dummy_data = {
+        'eid': range(num_records),
+        '30120-0.0': np.random.uniform(1, 4, num_records),         # lymphocyte_count
+        '30140-0.0': np.random.uniform(2, 7.5, num_records),      # neutrophil_count
+        '30710-0.0': np.random.uniform(0.1, 10, num_records),     # crp
+        '23480-0.0': np.random.uniform(0.8, 2.5, num_records),    # glyca
+        '30600-0.0': np.random.uniform(35, 50, num_records),      # albumin
+        '4080-0.0': np.random.uniform(110, 160, num_records),     # systolic_bp
+        '4079-0.0': np.random.uniform(70, 100, num_records),      # diastolic_bp
+        '41202-0.0': np.random.choice(['I63', 'I10', 'E11', ''], num_records), # stroke_history_icd10
+        '2443-0.0': np.random.choice([1, 0, -1, -3], num_records),# diabetes_diagnosis
+        '30750-0.0': np.random.uniform(25, 60, num_records),      # hba1c
+        '21001-0.0': np.random.uniform(18, 40, num_records),      # bmi
+        '30870-0.0': np.random.uniform(0.5, 3, num_records),      # triglycerides
+        '30760-0.0': np.random.uniform(0.8, 2.5, num_records),    # hdl_cholesterol
+        '22182-0.0': np.random.choice([1, np.nan], num_records)   # hla_data_available
+    }
+    ukb_dummy_df = pd.DataFrame(dummy_data)
+    ukb_dummy_df.set_index('eid', inplace=True)
+
+
+    # Generate the susceptibility markers
+    hsv1_susceptibility_markers = generate_hsv1_susceptibility_markers(ukb_dummy_df)
+
+    # Display the first few rows of the generated markers
+    print("Generated HSV-1 Susceptibility Markers:")
+    print(hsv1_susceptibility_markers.head())
+
+
+
+import pandas as pd
+import numpy as np
+
+def generate_prodromal_ad_surrogates(ukb_main_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generates a set of surrogates for prodromal dementia/AD derived from UK Biobank data.
+    This focuses on indicators of cognitive decline, neurobiomarkers, and memory issues,
+    rather than general dementia risk factors.
+
+    Args:
+        ukb_main_df: A pandas DataFrame containing the raw UK Biobank data.
+
+    Returns:
+        A pandas DataFrame with one row per participant and columns for each
+        prodromal AD surrogate. Higher values generally indicate a stronger
+        surrogate for prodromal AD.
+    """
+
+    surrogates = pd.DataFrame(index=ukb_main_df.index)
+
+    # --- 1. Decline in Specific Cognitive Test Scores Across Assessments ---
+
+    # We need to access data from different assessment visits.
+    # Assuming the UKB data is structured with -0.0 for initial assessment,
+    # -1.0 for first repeat, -2.0 for second repeat, etc.
+
+    # 1.1. Fluid Intelligence Score Decline (Field 20016)
+    # This test was administered at initial assessment and follow-up.
+    # Calculate change: (Follow-up Score - Initial Score)
+    # A negative value (decline) indicates higher risk.
+    if '20016-0.0' in ukb_main_df.columns and '20016-1.0' in ukb_main_df.columns:
+        surrogates['cog_fluid_intelligence_decline'] = ukb_main_df['20016-1.0'] - ukb_main_df['20016-0.0']
+        # Invert so higher value means higher decline
+        surrogates['cog_fluid_intelligence_decline'] = -surrogates['cog_fluid_intelligence_decline']
+    else:
+        surrogates['cog_fluid_intelligence_decline'] = np.nan
+
+    # 1.2. Reaction Time Decline (Field 20023)
+    # Administered at initial assessment and follow-up.
+    # Calculate change: (Follow-up Time - Initial Time)
+    # A positive value (slower reaction time) indicates higher risk.
+    if '20023-0.0' in ukb_main_df.columns and '20023-1.0' in ukb_main_df.columns:
+        surrogates['cog_reaction_time_decline'] = ukb_main_df['20023-1.0'] - ukb_main_df['20023-0.0']
+    else:
+        surrogates['cog_reaction_time_decline'] = np.nan
+
+    # 1.3. Pairs Matching Score Decline (Field 20026)
+    # This test assesses visuospatial memory.
+    # Calculate change: (Follow-up Score - Initial Score)
+    # A negative value (decline) indicates higher risk.
+    if '20026-0.0' in ukb_main_df.columns and '20026-1.0' in ukb_main_df.columns:
+        surrogates['cog_pairs_matching_decline'] = ukb_main_df['20026-1.0'] - ukb_main_df['20026-0.0']
+        # Invert so higher value means higher decline
+        surrogates['cog_pairs_matching_decline'] = -surrogates['cog_pairs_matching_decline']
+    else:
+        surrogates['cog_pairs_matching_decline'] = np.nan
+
+    # 1.4. Numeric Memory Decline (Field 20019)
+    # A negative value (decline) indicates higher risk.
+    if '20019-0.0' in ukb_main_df.columns and '20019-1.0' in ukb_main_df.columns:
+        surrogates['cog_numeric_memory_decline'] = ukb_main_df['20019-1.0'] - ukb_main_df['20019-0.0']
+        # Invert so higher value means higher decline
+        surrogates['cog_numeric_memory_decline'] = -surrogates['cog_numeric_memory_decline']
+    else:
+        surrogates['cog_numeric_memory_decline'] = np.nan
+
+    # --- 2. Neurobiomarkers ---
+
+    # 2.1. Brain MRI Measurements (assuming processed data fields are available)
+    # Example: Grey matter volume (lower is generally worse)
+    # Field 25781: Volume of grey matter (normalised for head size)
+    if '25781-2.0' in ukb_main_df.columns: # Assuming data is from follow-up imaging (instance 2)
+        surrogates['neuro_grey_matter_volume'] = -ukb_main_df['25781-2.0'] # Invert so higher value means lower volume
+    else:
+        surrogates['neuro_grey_matter_volume'] = np.nan
+
+    # 2.2. White Matter Hyperintensities (higher is generally worse)
+    # Field 25829: Volume of white matter hyperintensities (normalised for head size)
+    if '25829-2.0' in ukb_main_df.columns:
+        surrogates['neuro_wm_hyperintensities'] = ukb_main_df['25829-2.0']
+    else:
+        surrogates['neuro_wm_hyperintensities'] = np.nan
+
+    # 2.3. Hippocampal Volume (lower is generally worse)
+    # Field 25792: Volume of left hippocampus (normalised for head size)
+    # Field 25793: Volume of right hippocampus (normalised for head size)
+    if '25792-2.0' in ukb_main_df.columns and '25793-2.0' in ukb_main_df.columns:
+        surrogates['neuro_hippocampal_volume'] = -(ukb_main_df['25792-2.0'] + ukb_main_df['25793-2.0'])
+    else:
+        surrogates['neuro_hippocampal_volume'] = np.nan
+
+    # --- 3. Reports of Memory Issues / Subjective Cognitive Decline (SCD) ---
+
+    # 3.1. Self-reported memory changes (Field 20120)
+    # 1: Yes, 0: No
+    if '20120-0.0' in ukb_main_df.columns:
+        # Recode: 1 if "Yes, has been noticeable", 0 otherwise
+        surrogates['mem_self_reported_decline'] = ukb_main_df['20120-0.0'].apply(lambda x: 1 if x == 1 else 0)
+    else:
+        surrogates['mem_self_reported_decline'] = np.nan
+
+    # 3.2. Frequency of forgetting things (Field 20121)
+    # Recoding: Higher values indicate more frequent forgetting (higher risk).
+    # 1: Never/rarely, 2: Sometimes, 3: Often, 4: Very often
+    forgetting_mapping = {
+        1: 0,  # Never/rarely
+        2: 1,  # Sometimes
+        3: 2,  # Often
+        4: 3,  # Very often
+        -1: np.nan, # Do not know
+        -3: np.nan  # Prefer not to answer
+    }
+    if '20121-0.0' in ukb_main_df.columns:
+        surrogates['mem_forgetting_frequency'] = ukb_main_df['20121-0.0'].map(forgetting_mapping)
+    else:
+        surrogates['mem_forgetting_frequency'] = np.nan
+
+    # 3.3. Problems with memory (Field 699) - from Mental Health Questionnaire
+    # Coding: 0: No, 1: Yes
+    if '699-0.0' in ukb_main_df.columns:
+        surrogates['mem_problems_mental_health'] = ukb_main_df['699-0.0'].apply(lambda x: 1 if x == 1 else 0)
+    else:
+        surrogates['mem_problems_mental_health'] = np.nan
+
+    # --- 4. Other Potential Prodromal Indicators ---
+
+    # 4.1. Sleep duration changes (e.g., severe short or long sleep)
+    # Field 1160: Typical sleep duration
+    # Extreme sleep durations (e.g., < 6 hours or > 9 hours) might be a surrogate
+    if '1160-0.0' in ukb_main_df.columns:
+        surrogates['other_sleep_duration_risk'] = ukb_main_df['1160-0.0'].apply(
+            lambda x: 1 if (x < 6 or x > 9) else 0
+        )
+    else:
+        surrogates['other_sleep_duration_risk'] = np.nan
+
+    # 4.2. Falls (can be a sign of cognitive or motor decline)
+    # Field 20002: Self-reported non-cancer illness
+    # Coding 1459: "Falls"
+    if '20002-0.0' in ukb_main_df.columns:
+        falls_eids = ukb_main_df[ukb_main_df['20002-0.0'] == 1459].index
+        surrogates['other_reported_falls'] = surrogates.index.isin(falls_eids).astype(int)
+    else:
+        surrogates['other_reported_falls'] = 0
+
+    # 4.3. History of Delirium (often associated with underlying vulnerability)
+    # This might be captured through hospitalization records or self-report.
+    # UKB field 41270: ICD10 codes for primary diagnosis
+    # F05: Delirium, not induced by alcohol or other psychoactive substances
+    # Need to check across multiple instances of Field 41270 and other diagnostic fields.
+    delirium_icd10_codes = ['F05']
+    if '41270-0.0' in ukb_main_df.columns:
+        # Check all instances of ICD10 primary and secondary diagnoses
+        icd10_cols = [col for col in ukb_main_df.columns if col.startswith('41270-') or col.startswith('41271-')]
+        delirium_indicator = ukb_main_df[icd10_cols].apply(
+            lambda row: any(str(code).startswith(dc) for dc in delirium_icd10_codes for code in row.dropna()),
+            axis=1
+        )
+        surrogates['other_history_delirium'] = delirium_indicator.astype(int)
+    else:
+        surrogates['other_history_delirium'] = 0
+
+    return surrogates
 
